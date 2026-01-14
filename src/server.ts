@@ -76,61 +76,124 @@ app.get('/api/view/:id', async (req, res) => {
 
 // === 接口 B: 获取缩略图 (核心性能点) ===
 // 访问地址: /api/thumb/123 (123 是文件 ID)
-app.get('/api/thumb/:id', async (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        const file = await prisma.mediaFile.findUnique({ where: { id } });
+// src/server.ts
 
-        if (!file) return res.status(404).send('Not Found');
+// ... 前面的代码不变 ...
 
-        // 1. 定义缓存文件路径 (比如 cache_thumbs/123.webp)
-        const cachePath = path.join(THUMB_CACHE_DIR, `${id}.webp`);
+// 2. 获取缩略图 (修复版：去掉 fs 流，直接用 sharp 处理路径)
+app.get('/api/thumbnail/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const file = await prisma.mediaFile.findUnique({ where: { id } });
 
-        // 2. 如果缓存存在，直接返回 (极速响应)
-        if (fs.existsSync(cachePath)) {
-            return res.sendFile(cachePath);
-        }
-
-        // 3. 如果是图片，实时生成缩略图
-        if (file.mimeType === 'image') {
-            await sharp(file.path)
-                .resize(300, 300, { fit: 'cover' }) // 压缩成 300x300 的正方形
-                .webp({ quality: 80 })              // 转为 WebP 格式
-                .toFile(cachePath);
-            
-            return res.sendFile(cachePath);
-        } 
-        
-        // 4. 如果是视频，暂时返回一个默认图标 (视频截图比较慢，后续再优化)
-        // 这里你可以找一张 default_video.png 放在项目里
-        else if (file.mimeType === 'video') {
-             // 暂时返回文字或 404，或者你可以随便找张图代替
-             return res.status(404).send('Video thumb not ready');
-        }
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Thumbnail Error');
+    if (!file || !fs.existsSync(file.path)) {
+      return res.status(404).send('Not found');
     }
+
+    // 🔥 修复点：直接用 sharp 读取文件路径，然后直接 pipe 给 res
+    // 不要再用 fs.createReadStream 了
+    const pipeline = sharp(file.path)
+      .resize(300, 300, { 
+        fit: 'cover',    // 保持比例填充，裁掉多余的
+        position: 'center' // 从中间裁切
+      }) 
+      .jpeg({ quality: 60 }); // 压缩质量
+
+    // 设置响应头
+    res.set('Content-Type', 'image/jpeg');
+
+    // 发送数据 (并捕获管道中的错误，防止再次崩服)
+    pipeline
+      .on('error', (err) => {
+        console.error(`[Thumbnail Error] ID:${id} - ${err.message}`);
+        // 如果流还没发出去，发个 500；如果发了一半就算了
+        if (!res.headersSent) res.status(500).send('Error generating thumbnail');
+      })
+      .pipe(res);
+
+  } catch (error) {
+    console.error("生成缩略图严重错误:", error);
+    if (!res.headersSent) res.status(500).send("Thumbnail Error");
+  }
 });
 
 // === 接口 C: 查看原图/播放视频 ===
 // 访问地址: /api/view/123
 // 获取文件列表 (支持分页: ?page=1)
+// src/server.ts
+
+// 1. 新增接口：获取指定相册(文件夹)内的所有图片
+app.get('/api/album', async (req, res) => {
+  try {
+    const folderPath = req.query.folder as string;
+    if (!folderPath) return res.status(400).json({ error: "需要 folder 参数" });
+
+    const photos = await prisma.mediaFile.findMany({
+      where: {
+        folder: folderPath, // 匹配文件夹路径
+        mimeType: 'image',  // 只找图片
+      },
+      orderBy: { id: 'desc' }
+    });
+    res.json(photos);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "获取相册失败" });
+  }
+});
+
+// 2. 新增接口：获取缩略图 (实时压缩)
+app.get('/api/thumbnail/:id', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const file = await prisma.mediaFile.findUnique({ where: { id } });
+
+    if (!file || !fs.existsSync(file.path)) return res.status(404).send('Not found');
+
+    // 使用 sharp 实时调整大小
+    // resize(300): 把宽度压缩到 300px，高度自动按比例缩放，转为 jpeg 格式
+    const transform = sharp(file.path)
+      .resize(300) 
+      .jpeg({ quality: 60 }); // 质量 60%，体积非常小
+
+    // 管道流：读取文件 -> 压缩 -> 发送给前端
+    res.set('Content-Type', 'image/jpeg');
+    fs.createReadStream(file.path).pipe(transform).pipe(res);
+
+  } catch (error) {
+    console.error("生成缩略图失败:", error);
+    res.status(500).send("Thumbnail Error");
+  }
+});
+
 app.get('/api/files', async (req, res) => {
   try {
-    // 1. 获取页码，默认是第 1 页
     const page = parseInt(req.query.page as string) || 1;
-    const pageSize = 20; // 每次加载 20 个
+    const pageSize = 20;
 
-    // 2. 查询数据库
-    const files = await prisma.mediaFile.findMany({
-      take: pageSize,              // 取多少个
-      skip: (page - 1) * pageSize, // 跳过多少个
-      orderBy: { id: 'desc' },     // 按 ID 倒序 (新扫描的在前面)
+    // 1. 获取所有视频 (正常分页)
+    const videos = await prisma.mediaFile.findMany({
+      where: { mimeType: 'video' },
+      orderBy: { id: 'desc' },
+      take: pageSize,
+      skip: (page - 1) * pageSize,
     });
 
-    res.json(files);
+    // 2. 获取相册 (图片)：利用 distinct 这里的黑科技
+    // 意思就是：在所有 mimeType='image' 的文件里，按 'folder' 分组，每组只取一个
+    const albums = await prisma.mediaFile.findMany({
+      where: { mimeType: 'image' },
+      distinct: ['folder'], // 🔥 关键：按文件夹去重，实现“相册封面”效果
+      orderBy: { id: 'desc' },
+      take: pageSize,
+      skip: (page - 1) * pageSize,
+    });
+
+    // 3. 混合两者并按 ID 排序 (模拟 Timeline)
+    // 注意：这样分页在混合时可能不精准，但对于家庭 NAS 足够了
+    const mixed = [...videos, ...albums].sort((a, b) => b.id - a.id);
+
+    res.json(mixed);
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "获取列表失败" });

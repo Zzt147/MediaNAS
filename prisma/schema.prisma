@@ -17,5 +17,6 @@ model MediaFile {
   updatedAt DateTime @updatedAt
   thumbnailPath String?
 
+  folder    String   @default("")
   @@map("File")
 }
