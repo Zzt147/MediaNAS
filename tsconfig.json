@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    /* 基础配置 */
+    "target": "ES2022",                                  /* 生成较新的 JS 代码 */
+    "module": "NodeNext",                                /* 关键：配合 package.json 的 type: module */
+    "moduleResolution": "NodeNext",                      /* 关键：使用 Node 标准解析模块 */
+    "esModuleInterop": true,                             /* 允许 importfs from 'fs' 这种写法 */
+    "forceConsistentCasingInFileNames": true,            /* 强制文件名大小写一致（Windows下很重要） */
+    "strict": true,                                      /* 开启严格模式 */
+    "skipLibCheck": true,                                /* 跳过库文件的类型检查，加快速度 */
+    
+    /* 输出目录配置 */
+    "outDir": "./dist",                                  /* 编译后的 js 放这里 */
+    "rootDir": "./src"                                   /* 你的源代码建议都放在 src 文件夹里 */
+  },
+  "ts-node": {
+    "esm": true                                          /* 让 ts-node 也能跑 import */
+  },
+  "include": ["src/**/*", "src/test.ts"],                    /* 包含哪些文件 */
+  "exclude": ["node_modules"]
+}
