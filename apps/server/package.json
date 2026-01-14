@@ -4,7 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "ts-node src/main.ts",
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "scan": "ts-node src/scripts/scan.ts",
+    "check": "ts-node src/scripts/check.ts",
+    "fix": "ts-node src/scripts/fix_metadata.ts",
+    "test:script": "ts-node src/scripts/test.ts"
   },
   "keywords": [],
   "author": "",
