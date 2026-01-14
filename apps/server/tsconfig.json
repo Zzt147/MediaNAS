@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    /* --- 核心修复 --- */
+    "module": "commonjs",                          /* 改为 commonjs */
+    "moduleResolution": "node",                    /* 改为 node，不再强制要求 .js 后缀 */
+    "esModuleInterop": true,
+    "target": "ES2021",
+    /* ---------------- */
+
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,     
+    "skipLibCheck": true,
+    "emitDecoratorMetadata": true,                 /* NestJS 必须项：允许装饰器元数据 */
+    "experimentalDecorators": true,                /* NestJS 必须项：允许装饰器 */
+    
+    "paths": {
+      "@medianas/shared-types": ["../../packages/shared-types/src/index.ts"]
+    },
+    
+    "outDir": "./dist",
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}
